@@ -11,9 +11,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 import subprocess
-
-import markdown
-import pynliner
+from bs4 import UnicodeDammit
 
 import pypandoc
 
@@ -23,7 +21,7 @@ __name__ = 'muttdown'
 
 
 def convert_one(part, css):
-    text = part.get_payload(None, True).decode("utf-8")
+    text = part.get_payload(None, False)
     # if not text.startswith('!m'):
     #     return None
     extra_args = ["-s"]
@@ -31,15 +29,12 @@ def convert_one(part, css):
         extra_args.extend(["-H", css])
     if '\n-- \n' in text:
         pre_signature, signature = text.split('\n-- \n')
-        md = pypandoc.convert_text(text, format="md", to="html5")
+        md = pypandoc.convert_text(pre_signature, format="md", to="html5", extra_args=extra_args)
         md += '\n<div class="signature" style="font-size: small"><p>-- <br />'
         md += '<br />'.join(signature.split('\n'))
         md += '</p></div>'
     else:
         md = pypandoc.convert_text(text, format="md", to="html5", extra_args=extra_args)
-    # if css:
-    #     md = '<style>' + css + '</style>' + md
-    #     md = pynliner.fromString(md)
     message = MIMEText(md, 'html')
     return message
 
@@ -112,6 +107,8 @@ def main():
         type=str, required=False,
         help='Css file'
     )
+    parser.add_argument('-f', '--envelope-from', required=False)
+    parser.add_argument('addresses', nargs='*')
     args = parser.parse_args()
 
     message = sys.stdin.read()
@@ -123,7 +120,12 @@ def main():
     if args.print_message:
         print(rebuilt.as_string())
     else:
-        cmd = ['msmtp', '-a', args.account, '-t']
+        cmd = ['msmtp', '-a', args.account]
+        if args.envelope_from:
+            cmd += ['-f', args.envelope_from] + args.addresses
+        else:
+            cmd += ['-t']
+
 
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, shell=False)
         proc.communicate(rebuilt.as_string().encode())
